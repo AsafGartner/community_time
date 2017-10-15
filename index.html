@@ -41,7 +41,7 @@ body {
 .addZone {
     position: fixed;
     top: 10px;
-    right: 10px;
+    left: 10px;
 }
 
 .addZone a {
@@ -59,26 +59,6 @@ body {
 
 .addZone a.confirmZone:hover {
     background: #00ff00;
-}
-
-.addZone a.cancelZone {
-    background: #aa0000;
-}
-
-.addZone a.cancelZone:hover {
-    background: #ff0000;
-}
-
-.addZone .selectZone {
-    display: none;
-}
-
-.addZone .cancelZone {
-    display: none;
-}
-
-.addZone.adding .selectzone, .addZone.adding .cancelZone {
-    display: inline-block;
 }
 
 .zones {
@@ -152,12 +132,106 @@ body {
 .zone .member:hover .delete {
     visibility: visible;
 }
+
+.timezonePicker {
+    display: none;
+    position: fixed;
+    top: 20px;
+    left: 60px;
+    flex-direction: row;
+    width: 600px;
+    height: 90%;
+    background: black;
+    border: 3px solid grey;
+}
+
+.timezonePicker.open {
+    display: flex;
+}
+
+.timezonePicker .filters {
+    flex: 0 0 200px;
+    border-right: 3px solid grey;
+    display: flex;
+    flex-direction: column;
+}
+
+.timezonePicker .filtersHeader {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    border-bottom: 3px solid grey;
+}
+
+.timezonePicker .filtersHeader span {
+    flex: 1 1 auto;
+    text-align: center;
+    padding: 5px;
+    cursor: pointer;
+}
+
+.timezonePicker .filtersHeader span.active, .timezonePicker .filtersHeader span.active:hover {
+    background: green;
+}
+
+.timezonePicker .filtersHeader span:hover {
+    background: grey;
+}
+
+.timezonePicker .filterList {
+    height: 100%;
+    overflow-y: scroll;
+}
+
+.timezonePicker .filterList span {
+    display: block;
+    padding: 5px;
+    cursor: pointer;
+}
+
+.timezonePicker .filterList span.active, .timezonePicker .filterList span.active:hover {
+    background: green;
+}
+
+.timezonePicker .filterList span:hover {
+    background: grey;
+}
+
+.timezonePicker .timezoneList {
+    height: 100%;
+    width: 100%;
+    overflow-y: scroll;
+}
+
+.timezonePicker .timezoneList span {
+    display: block;
+    padding: 5px;
+    cursor: pointer;
+}
+
+.timezonePicker .timezoneList span.active, .timezonePicker .timezoneList span.active:hover {
+    background: green;
+}
+
+.timezonePicker .timezoneList span:hover {
+    background: grey;
+}
 </style>
 </head>
 <body>
+<div class="timezonePicker">
+    <div class="filters">
+        <div class="filtersHeader">
+            <span class="offset active">Offset</span>
+            <span class="prefix">Prefix</span>
+        </div>
+        <div class="filterList">
+        </div>
+    </div>
+    <div class="timezoneList">
+    </div>
+</div>
 <div class="addZone">
-    <select class="selectZone"></select>
-    <a href="javascript:;" class="cancelZone">Cancel</a>
     <a href="javascript:;" class="confirmZone">+</a>
 </div>
 <div class="header">
@@ -222,6 +296,49 @@ body {
     zonePrototype.appendChild(zpMembers);
 
     var zones = [];
+    var activeTimezones = [];
+
+    var timezonesByOffset = {};
+    var timezonesByPrefix = {};
+    var tzNames = moment.tz.names();
+    for (var i = 0; i < tzNames.length; ++i) {
+        var offset = moment().tz(tzNames[i]).format("Z");
+        if (!timezonesByOffset[offset]) {
+            timezonesByOffset[offset] = [];
+        }
+        timezonesByOffset[offset].push(tzNames[i]);
+        var firstSlash = tzNames[i].indexOf("/");
+        var prefix = "None";
+        if (firstSlash > 0) {
+            prefix = tzNames[i].slice(0, firstSlash);
+        }
+        if (!timezonesByPrefix[prefix]) {
+            timezonesByPrefix[prefix] = [];
+        }
+        timezonesByPrefix[prefix].push(tzNames[i]);
+    }
+
+    var offsets = [];
+    for (var key in timezonesByOffset) {
+        offsets.push(key);
+    }
+    offsets.sort(function(a, b) {
+        var cmp = (parseInt(a.replace(":", ""), 10) - parseInt(b.replace(":", ""), 10));
+        return cmp;
+    });
+
+    var prefixes = [];
+    for (var key in timezonesByPrefix) {
+        prefixes.push(key);
+    }
+    prefixes.sort(function(a, b) {
+        var cmp = a.localeCompare(b);
+        if (cmp != 0) {
+            if (a == "None") return -1;
+            if (b == "None") return 1;
+        }
+        return cmp;
+    });
 
     function zoneInput(ev) {
         if (ev.which == 13) {
@@ -242,7 +359,8 @@ body {
         for (var i = 0; i < zones.length; ++i) {
             toSave.push({
                 tz: zones[i].tz,
-                members: zones[i].members
+                members: zones[i].members,
+                active: zones[i].active
             });
         }
 
@@ -253,7 +371,7 @@ body {
         if (localStorage.getItem("zones")) {
             var loaded = JSON.parse(localStorage.getItem("zones"));
             for (var i = 0; i < loaded.length; ++i) {
-                addZone(loaded[i].tz, loaded[i].members, true);
+                addZone(loaded[i].tz, loaded[i].members, loaded[i].active, true);
             }
         }
     }
@@ -273,6 +391,7 @@ body {
             deleteEl.textContent = "X";
             deleteEl.href = "javascript:;"
             deleteEl.classList.add("delete");
+            deleteEl.addEventListener("click", removeMember.bind(null, zone, member));
             memberEl.appendChild(deleteEl);
             var memberName = document.createTextNode(member);
             memberEl.appendChild(memberName);
@@ -287,46 +406,88 @@ body {
         }
     }
 
-    function addZone(tz, members, skipSave) {
-        for (var i = 0; i < zones.length; ++i) {
-            if (zones[i].tz == tz) {
-                return;
-            }
+    function removeMember(zone, member) {
+        var idx = zone.members.indexOf(member);
+        if (idx >= 0) {
+            zone.members.splice(idx, 1);
+            zone.el.querySelector(".members").children[idx].remove();
+            saveZones();
+        }
+    }
+
+    function addZone(tz, members, active, skipSave) {
+        if (activeTimezones.indexOf(tz) >= 0) {
+            return;
         }
 
         var zoneEl = zonePrototype.cloneNode(true);
         zoneEl.querySelector(".title").textContent = tz;
-        var zone = {
-            tz: tz,
-            offset: parseFloat(moment.tz(tz).format("Z").replace(":", ".")),
-            el: zoneEl,
-            time: zoneEl.querySelector(".time"),
-            day: zoneEl.querySelector(".day"),
-            members: []
-        };
+        var zone = zones.find(function(x) {
+            return x.tz == tz;
+        });
+        if (zone) {
+            zone.active = true;
+            zone.el = zoneEl;
+            zone.time = zoneEl.querySelector(".time");
+            zone.day = zoneEl.querySelector(".day");
+            members = members || zone.members;
+            zone.members = [];
+        } else {
+            zone = {
+                tz: tz,
+                offset: parseInt(moment.tz(tz).format("Z").replace(":", ""), 10),
+                el: zoneEl,
+                time: zoneEl.querySelector(".time"),
+                day: zoneEl.querySelector(".day"),
+                members: [],
+                active: (active === undefined ? true : active)
+            };
+            zones.push(zone);
+            zones.sort(function(a, b) {
+                return a.offset - b.offset;
+            });
+        }
         var membersEl = zoneEl.querySelector(".members");
         if (members) {
             for (var i = 0; i < members.length; ++i) {
                 addMember(zone, members[i], true);
             }
         }
-        zones.push(zone);
-        zones.sort(function(a, b) {
-            return a.offset - b.offset;
-        });
-        var idx = zones.indexOf(zone);
-        if (idx < zonesContainer.children.length) {
-            zonesContainer.insertBefore(zoneEl, zonesContainer.children[idx]);
-        } else {
-            zonesContainer.appendChild(zoneEl);
+        if (zone.active) {
+            zoneEl.setAttribute("offset", zone.offset);
+            activeTimezones.push(tz);
+            var found = false;
+            for (var i = 0; !found && i < zonesContainer.children.length; ++i) {
+                if (parseInt(zonesContainer.children[i].getAttribute("offset"), 10) > zone.offset) {
+                    zonesContainer.insertBefore(zoneEl, zonesContainer.children[i]);
+                    found = true;
+                }
+            }
+            if (!found) {
+                zonesContainer.appendChild(zoneEl);
+            }
+
+            zone.el.querySelector("input").addEventListener("keypress", zoneInput.bind(zone));
+            zone.el.querySelector(".confirm").addEventListener("click", zoneInputConfirm.bind(zone));
+
+            var zoneTime = moment().tz(zone.tz);
+            zone.time.textContent = zoneTime.format("HH:mm");
+            zone.day.textContent = days[zoneTime.day()];
         }
 
-        zone.el.querySelector("input").addEventListener("keypress", zoneInput.bind(zone));
-        zone.el.querySelector(".confirm").addEventListener("click", zoneInputConfirm.bind(zone));
-
-        zone.time.textContent = moment().tz(zone.tz).format("HH:mm");
-
         if (!skipSave) {
+            saveZones();
+        }
+    }
+
+    function removeZone(tz) {
+        if (activeTimezones.indexOf(tz) >= 0) {
+            activeTimezones.splice(activeTimezones.indexOf(tz), 1);
+            var zone = zones.find(function(x) {
+                return x.tz == tz;
+            });
+            zone.el.remove();
+            zone.active = false;
             saveZones();
         }
     }
@@ -350,33 +511,91 @@ body {
     updateAll();
     setInterval(updateAll, 1000);
 
-    var zoneNames = moment.tz.names();
-    var zoneSelect = document.querySelector(".addZone select");
-    for (var i = 0; i < zoneNames.length; ++i) {
-        var option = document.createElement("OPTION");
-        option.textContent = zoneNames[i];
-        option.value = zoneNames[i];
-        zoneSelect.appendChild(option);
+    var timezonePicker = document.querySelector(".timezonePicker");
+    var timezoneFilterList = timezonePicker.querySelector(".filterList");
+    var timezoneList = timezonePicker.querySelector(".timezoneList");
+
+    function resetPicker(filterType) {
+        if (filterType == "offset") {
+            timezonePicker.querySelector(".filtersHeader .offset").classList.add("active");
+            timezonePicker.querySelector(".filtersHeader .prefix").classList.remove("active");
+        } else {
+            timezonePicker.querySelector(".filtersHeader .offset").classList.remove("active");
+            timezonePicker.querySelector(".filtersHeader .prefix").classList.add("active");
+        }
+
+        while (timezoneFilterList.children.length > 0) {
+            timezoneFilterList.children[0].remove();
+        }
+
+        while (timezoneList.children.length > 0) {
+            timezoneList.children[0].remove();
+        }
+
+        var list = (filterType == "offset" ? offsets : prefixes);
+        for (var i = 0; i < list.length; ++i) {
+            var filter = document.createElement("SPAN");
+            filter.textContent = list[i];
+            filter.setAttribute("filter", list[i]);
+            filter.setAttribute("filterType", filterType);
+            timezoneFilterList.appendChild(filter);
+        }
     }
 
-    document.querySelector(".confirmZone").addEventListener("click", function() {
-        if (adding) {
-            adding = false;
-            document.querySelector(".addZone").classList.remove("adding");
-            var tz = document.querySelector(".addZone select").value;
-            if (tz && tz.length > 0) {
-                addZone(tz);
+    function setPickerFilter(type, filter) {
+        while (timezoneList.children.length > 0) {
+            timezoneList.children[0].remove();
+        }
+
+        var collection = (type == "offset" ? timezonesByOffset : timezonesByPrefix);
+        var timezones = collection[filter];
+        for (var i = 0; i < timezones.length; ++i) {
+            var tz = document.createElement("SPAN");
+            tz.setAttribute("timezone", timezones[i]);
+            tz.textContent = timezones[i];
+            if (activeTimezones.indexOf(timezones[i]) >= 0) {
+                tz.classList.add("active");
             }
-        } else {
-            adding = true;
-            document.querySelector(".addZone").classList.add("adding");
+            timezoneList.appendChild(tz);
+        }
+    }
+
+    document.querySelector(".timezonePicker .filtersHeader .offset").addEventListener("click", function() {
+        resetPicker("offset");
+    });
+
+    document.querySelector(".timezonePicker .filtersHeader .prefix").addEventListener("click", function() {
+        resetPicker("prefix");
+    });
+
+    document.querySelector(".timezonePicker .filterList").addEventListener("click", function(ev) {
+        var attr = ev.target.getAttribute("filter");
+        if (attr) {
+            for (var i = 0; i < timezoneFilterList.children.length; ++i) {
+                timezoneFilterList.children[i].classList.remove("active");
+            }
+            ev.target.classList.add("active");
+        }
+        setPickerFilter(ev.target.getAttribute("filterType"), attr);
+    });
+
+    document.querySelector(".timezonePicker .timezoneList").addEventListener("click", function(ev) {
+        var attr = ev.target.getAttribute("timezone");
+        if (attr) {
+            if (activeTimezones.indexOf(attr) >= 0) {
+                removeZone(attr);
+                ev.target.classList.remove("active");
+            } else {
+                addZone(attr);
+                ev.target.classList.add("active");
+            }
         }
     });
 
-    document.querySelector(".cancelZone").addEventListener("click", function() {
-        adding = false;
-        document.querySelector(".addZone").classList.remove("adding");
+    document.querySelector(".addZone .confirmZone").addEventListener("click", function() {
+        timezonePicker.classList.toggle("open");
     });
+    resetPicker("offset");
 </script>
 </body>
 </html>
