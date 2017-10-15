@@ -1,0 +1,382 @@
+<!DOCTYPE HTML5>
+<html>
+<head>
+<meta charset="UTF-8">
+<script type="text/javascript" src="moment.js"></script>
+<script type="text/javascript" src="moment-timezone-with-data-2012-2022.js"></script>
+<style>
+body {
+    padding: 10px;
+    margin: 0;
+    background-color: #222;
+    font-family: sans-serif;
+    color: #D4D0C2;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+.header {
+    display: flex;
+    flex-direction: row;
+    margin: 50px 20%;
+}
+
+.header .utc, .header .local {
+    flex: 0 0 50%;
+    text-align: center;
+}
+
+.header .title {
+    font-size: 50px;
+    font-weight: bold;
+}
+
+.header .time {
+    margin-top: 20px;
+    font-size: 40px;
+}
+
+.addZone {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+}
+
+.addZone a {
+    display: inline-block;
+    color: black;
+    font-size: 20px;
+    padding: 10px 17px;
+    border-radius: 30px;
+    text-decoration: none;
+}
+
+.addZone a.confirmZone {
+    background: #00aa00;
+}
+
+.addZone a.confirmZone:hover {
+    background: #00ff00;
+}
+
+.addZone a.cancelZone {
+    background: #aa0000;
+}
+
+.addZone a.cancelZone:hover {
+    background: #ff0000;
+}
+
+.addZone .selectZone {
+    display: none;
+}
+
+.addZone .cancelZone {
+    display: none;
+}
+
+.addZone.adding .selectzone, .addZone.adding .cancelZone {
+    display: inline-block;
+}
+
+.zones {
+    display: flex;
+    flex-direction: row;
+    white-space: nowrap;
+    justify-content: space-evenly;
+}
+
+.zones .zone {
+    flex: 0 1 auto;
+    text-align: center;
+    margin: 0 10px;
+}
+
+.zone .title {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.zone .day, .zone .time {
+    display: inline-block;
+    margin: 0 5px;
+}
+
+.zone .inputContainer {
+    margin-top: 10px;
+    text-align: left;
+    display: flex;
+}
+
+.zone .inputContainer input {
+    flex: 1 1 auto;
+}
+
+.zone .inputContainer a {
+    flex: 0 1 auto;
+}
+
+.zone input {
+    background: #222;
+    border: 1px solid #444;
+    width: 100px;
+    color: #D4D0C2;
+}
+
+.zone .confirm {
+    text-decoration: none;
+    background: #00aa00;
+    color: black;
+    border-radius: 10px;
+    padding: 0 5px;
+    margin-left: 5px;
+}
+
+.zone .member {
+    display: block;
+    text-align: left;
+}
+
+.zone .member .delete {
+    visibility: hidden;
+    text-decoration: none;
+    color: black;
+    background: #aa0000;
+    border-radius: 10px;
+    padding: 0 4px;
+    margin-right: 3px;
+}
+
+.zone .member:hover .delete {
+    visibility: visible;
+}
+</style>
+</head>
+<body>
+<div class="addZone">
+    <select class="selectZone"></select>
+    <a href="javascript:;" class="cancelZone">Cancel</a>
+    <a href="javascript:;" class="confirmZone">+</a>
+</div>
+<div class="header">
+    <div class="utc">
+        <div class="title">UTC</div>
+        <div class="day"></div>
+        <div class="time"></div>
+    </div>
+    <div class="local">
+        <div class="title"></div>
+        <div class="day"></div>
+        <div class="time"></div>
+    </div>
+</div>
+<div class="zones">
+</div>
+<script>
+    var days = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+    ];
+    var adding = false;
+    var utcTime = document.querySelector(".header .utc .time");
+    var utcDay = document.querySelector(".header .utc .day");
+    var localTitle = document.querySelector(".header .local .title");
+    localTitle.textContent = moment.tz.guess();
+    var localTime = document.querySelector(".header .local .time");
+    var localDay = document.querySelector(".header .local .day");
+    var zonesContainer = document.querySelector(".zones");
+
+    var zonePrototype = document.createElement("DIV");
+    zonePrototype.classList.add("zone");
+
+    var zpTitle = document.createElement("DIV");
+    zpTitle.classList.add("title");
+    zonePrototype.appendChild(zpTitle);
+    var zpDay = document.createElement("DIV");
+    zpDay.classList.add("day");
+    zonePrototype.appendChild(zpDay);
+    var zpTime = document.createElement("DIV");
+    zpTime.classList.add("time");
+    zonePrototype.appendChild(zpTime);
+    var zpInputContainer = document.createElement("DIV");
+    zpInputContainer.classList.add("inputContainer");
+    zonePrototype.appendChild(zpInputContainer);
+    var zpInput = document.createElement("INPUT");
+    zpInput.name = "memberInput";
+    zpInput.type = "text";
+    zpInputContainer.appendChild(zpInput);
+    var zpInputConfirm = document.createElement("A");
+    zpInputConfirm.classList.add("confirm");
+    zpInputConfirm.href = "javascript:;";
+    zpInputConfirm.textContent = "+";
+    zpInputContainer.appendChild(zpInputConfirm);
+    var zpMembers = document.createElement("DIV");
+    zpMembers.classList.add("members");
+    zonePrototype.appendChild(zpMembers);
+
+    var zones = [];
+
+    function zoneInput(ev) {
+        if (ev.which == 13) {
+            var val = this.el.querySelector("input").value;
+            this.el.querySelector("input").value = "";
+            addMember(this, val);
+        }
+    }
+
+    function zoneInputConfirm(ev) {
+        var val = this.el.querySelector("input").value;
+        this.el.querySelector("input").value = "";
+        addMember(this, val);
+    }
+
+    function saveZones() {
+        var toSave = [];
+        for (var i = 0; i < zones.length; ++i) {
+            toSave.push({
+                tz: zones[i].tz,
+                members: zones[i].members
+            });
+        }
+
+        localStorage.setItem("zones", JSON.stringify(toSave));
+    }
+
+    function loadZones() {
+        if (localStorage.getItem("zones")) {
+            var loaded = JSON.parse(localStorage.getItem("zones"));
+            for (var i = 0; i < loaded.length; ++i) {
+                addZone(loaded[i].tz, loaded[i].members, true);
+            }
+        }
+    }
+
+    function addMember(zone, member, skipSave) {
+        member = (member ? member.trim() : member);
+        if (member && member.length > 0 && zone.members.indexOf(member) == -1) {
+            zone.members.push(member);
+            zone.members.sort(function (a, b) {
+                return a.localeCompare(b, {usage: "search"});
+            });
+            var idx = zone.members.indexOf(member);
+            var membersEl = zone.el.querySelector(".members");
+            var memberEl = document.createElement("SPAN");
+            memberEl.classList.add("member");
+            var deleteEl = document.createElement("A");
+            deleteEl.textContent = "X";
+            deleteEl.href = "javascript:;"
+            deleteEl.classList.add("delete");
+            memberEl.appendChild(deleteEl);
+            var memberName = document.createTextNode(member);
+            memberEl.appendChild(memberName);
+            if (idx < membersEl.children.length) {
+                membersEl.insertBefore(memberEl, membersEl.children[idx]);
+            } else {
+                membersEl.appendChild(memberEl);
+            }
+        }
+        if (!skipSave) {
+            saveZones();
+        }
+    }
+
+    function addZone(tz, members, skipSave) {
+        for (var i = 0; i < zones.length; ++i) {
+            if (zones[i].tz == tz) {
+                return;
+            }
+        }
+
+        var zoneEl = zonePrototype.cloneNode(true);
+        zoneEl.querySelector(".title").textContent = tz;
+        var zone = {
+            tz: tz,
+            offset: parseFloat(moment.tz(tz).format("Z").replace(":", ".")),
+            el: zoneEl,
+            time: zoneEl.querySelector(".time"),
+            day: zoneEl.querySelector(".day"),
+            members: []
+        };
+        var membersEl = zoneEl.querySelector(".members");
+        if (members) {
+            for (var i = 0; i < members.length; ++i) {
+                addMember(zone, members[i], true);
+            }
+        }
+        zones.push(zone);
+        zones.sort(function(a, b) {
+            return a.offset - b.offset;
+        });
+        var idx = zones.indexOf(zone);
+        if (idx < zonesContainer.children.length) {
+            zonesContainer.insertBefore(zoneEl, zonesContainer.children[idx]);
+        } else {
+            zonesContainer.appendChild(zoneEl);
+        }
+
+        zone.el.querySelector("input").addEventListener("keypress", zoneInput.bind(zone));
+        zone.el.querySelector(".confirm").addEventListener("click", zoneInputConfirm.bind(zone));
+
+        zone.time.textContent = moment().tz(zone.tz).format("HH:mm");
+
+        if (!skipSave) {
+            saveZones();
+        }
+    }
+
+    function updateAll() {
+        var now = moment();
+        localTime.textContent = now.format("HH:mm:ss");
+        localDay.textContent = days[now.day()];
+        utcTime.textContent = now.tz("UTC").format("HH:mm:ss");
+        utcDay.textContent = days[now.day()];
+
+        for (var i = 0; i < zones.length; ++i) {
+            var zone = zones[i];
+            var zoneTime = now.tz(zone.tz);
+            zone.time.textContent = zoneTime.format("HH:mm");
+            zone.day.textContent = days[zoneTime.day()];
+        }
+    }
+
+    loadZones();
+    updateAll();
+    setInterval(updateAll, 1000);
+
+    var zoneNames = moment.tz.names();
+    var zoneSelect = document.querySelector(".addZone select");
+    for (var i = 0; i < zoneNames.length; ++i) {
+        var option = document.createElement("OPTION");
+        option.textContent = zoneNames[i];
+        option.value = zoneNames[i];
+        zoneSelect.appendChild(option);
+    }
+
+    document.querySelector(".confirmZone").addEventListener("click", function() {
+        if (adding) {
+            adding = false;
+            document.querySelector(".addZone").classList.remove("adding");
+            var tz = document.querySelector(".addZone select").value;
+            if (tz && tz.length > 0) {
+                addZone(tz);
+            }
+        } else {
+            adding = true;
+            document.querySelector(".addZone").classList.add("adding");
+        }
+    });
+
+    document.querySelector(".cancelZone").addEventListener("click", function() {
+        adding = false;
+        document.querySelector(".addZone").classList.remove("adding");
+    });
+</script>
+</body>
+</html>
